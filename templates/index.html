@@ -101,7 +101,7 @@
     
     <div class="controls">
         <button onclick="refreshNews()">Refresh</button>
-        <span class="auto-refresh">Auto-refresh every 5 minutes</span>
+        <span class="auto-refresh">News auto-updates daily</span>
     </div>
     
     <div id="loading" class="loading">Loading news...</div>
@@ -115,6 +115,34 @@
             const loading = document.getElementById('loading');
             
             loading.style.display = 'block';
+            loading.textContent = 'Refreshing news...';
+            container.innerHTML = '';
+            
+            try {
+                // Force refresh the news cache
+                const refreshResponse = await fetch('/api/refresh');
+                if (!refreshResponse.ok) {
+                    throw new Error('Refresh failed');
+                }
+                
+                // Get the updated news
+                const response = await fetch('/api/news');
+                const news = await response.json();
+                
+                loading.style.display = 'none';
+                displayNews(news);
+            } catch (error) {
+                loading.style.display = 'none';
+                container.innerHTML = '<div class="error">Error refreshing news. Please try again.</div>';
+            }
+        }
+        
+        async function loadNews() {
+            const container = document.getElementById('news-container');
+            const loading = document.getElementById('loading');
+            
+            loading.style.display = 'block';
+            loading.textContent = 'Loading news...';
             container.innerHTML = '';
             
             try {
@@ -163,7 +191,8 @@
         }
         
         function startAutoRefresh() {
-            autoRefreshInterval = setInterval(refreshNews, 5 * 60 * 1000); // 5 minutes
+            // Auto-refresh every hour to check cache
+            autoRefreshInterval = setInterval(loadNews, 60 * 60 * 1000); // 1 hour
         }
         
         function stopAutoRefresh() {
@@ -172,8 +201,8 @@
             }
         }
         
-        // Initial load
-        refreshNews();
+        // Initial load (from cache)
+        loadNews();
         startAutoRefresh();
         
         // Stop auto-refresh when page is hidden

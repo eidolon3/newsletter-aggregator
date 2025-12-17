@@ -6,6 +6,8 @@ import feedparser
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import json
+import threading
+import time
 
 app = Flask(__name__)
 
@@ -24,6 +26,14 @@ class NewsAggregator:
             ('Nature Neuroscience', self.get_nature_neuro),
             ('Gwern.net', self.get_gwern)
         ])
+        
+        # Cache for news data
+        self.news_cache = {}
+        self.last_refresh = None
+        self.cache_duration = 24 * 60 * 60  # 24 hours in seconds
+        
+        # Start background refresh thread
+        self.start_background_refresh()
         
     async def get_hackernews(self):
         """Get top stories from Hacker News API"""
@@ -344,8 +354,45 @@ class NewsAggregator:
         # Return only the essential info
         return [{'title': post['title'], 'url': post['url']} for post in all_posts[:20]]
     
-    async def get_all_news(self):
-        """Fetch news from all sources"""
+    def start_background_refresh(self):
+        """Start background thread for daily news refresh"""
+        def refresh_worker():
+            while True:
+                try:
+                    print("Starting daily news refresh...")
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    fresh_news = loop.run_until_complete(self.fetch_all_news())
+                    loop.close()
+                    
+                    self.news_cache = fresh_news
+                    self.last_refresh = datetime.now()
+                    print(f"News refreshed successfully at {self.last_refresh}")
+                    
+                except Exception as e:
+                    print(f"Error in background refresh: {e}")
+                
+                # Sleep for 24 hours
+                time.sleep(self.cache_duration)
+        
+        # Start the worker thread
+        refresh_thread = threading.Thread(target=refresh_worker, daemon=True)
+        refresh_thread.start()
+        
+        # Do initial refresh
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self.news_cache = loop.run_until_complete(self.fetch_all_news())
+            loop.close()
+            self.last_refresh = datetime.now()
+            print(f"Initial news cache loaded at {self.last_refresh}")
+        except Exception as e:
+            print(f"Error in initial refresh: {e}")
+            self.news_cache = {}
+    
+    async def fetch_all_news(self):
+        """Fetch fresh news from all sources"""
         all_news = {}
         
         for source_name, fetch_func in self.sources.items():
@@ -357,6 +404,36 @@ class NewsAggregator:
                 all_news[source_name] = []
         
         return all_news
+    
+    def get_cached_news(self):
+        """Get news from cache"""
+        if not self.news_cache:
+            # If cache is empty, do a fresh fetch
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                self.news_cache = loop.run_until_complete(self.fetch_all_news())
+                loop.close()
+                self.last_refresh = datetime.now()
+            except Exception as e:
+                print(f"Error fetching fresh news: {e}")
+                return {}
+        
+        return self.news_cache
+    
+    def force_refresh(self):
+        """Force a manual refresh of the news cache"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self.news_cache = loop.run_until_complete(self.fetch_all_news())
+            loop.close()
+            self.last_refresh = datetime.now()
+            print(f"Manual refresh completed at {self.last_refresh}")
+            return True
+        except Exception as e:
+            print(f"Error in manual refresh: {e}")
+            return False
 
 aggregator = NewsAggregator()
 
@@ -366,11 +443,20 @@ def index():
 
 @app.route('/api/news')
 def get_news():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    news = loop.run_until_complete(aggregator.get_all_news())
-    loop.close()
+    news = aggregator.get_cached_news()
     return jsonify(news)
+
+@app.route('/api/refresh')
+def refresh_news():
+    success = aggregator.force_refresh()
+    if success:
+        return jsonify({
+            'status': 'success', 
+            'message': 'News refreshed successfully',
+            'last_refresh': aggregator.last_refresh.isoformat() if aggregator.last_refresh else None
+        })
+    else:
+        return jsonify({'status': 'error', 'message': 'Failed to refresh news'}), 500
 
 if __name__ == '__main__':
     import os
