@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Aggregator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fff;
+            color: #333;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 30px;
+            font-weight: normal;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 3px;
+        }
+        
+        button:hover {
+            background: #005999;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .source-section {
+            margin-bottom: 40px;
+        }
+        
+        .source-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #222;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .articles {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .articles li {
+            margin-bottom: 8px;
+        }
+        
+        .articles a {
+            color: #007acc;
+            text-decoration: none;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .articles a:hover {
+            text-decoration: underline;
+        }
+        
+        .articles a:visited {
+            color: #666;
+        }
+        
+        .error {
+            color: #cc0000;
+            font-style: italic;
+        }
+        
+        .auto-refresh {
+            color: #666;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>News Aggregator</h1>
+    
+    <div class="controls">
+        <button onclick="refreshNews()">Refresh</button>
+        <span class="auto-refresh">Auto-refresh every 5 minutes</span>
+    </div>
+    
+    <div id="loading" class="loading">Loading news...</div>
+    <div id="news-container"></div>
+    
+    <script>
+        let autoRefreshInterval;
+        
+        async function refreshNews() {
+            const container = document.getElementById('news-container');
+            const loading = document.getElementById('loading');
+            
+            loading.style.display = 'block';
+            container.innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/news');
+                const news = await response.json();
+                
+                loading.style.display = 'none';
+                displayNews(news);
+            } catch (error) {
+                loading.style.display = 'none';
+                container.innerHTML = '<div class="error">Error loading news. Please try again.</div>';
+            }
+        }
+        
+        function displayNews(news) {
+            const container = document.getElementById('news-container');
+            container.innerHTML = '';
+            
+            for (const [source, articles] of Object.entries(news)) {
+                if (articles && articles.length > 0) {
+                    const section = document.createElement('div');
+                    section.className = 'source-section';
+                    
+                    const title = document.createElement('div');
+                    title.className = 'source-title';
+                    title.textContent = source;
+                    section.appendChild(title);
+                    
+                    const articleList = document.createElement('ul');
+                    articleList.className = 'articles';
+                    
+                    articles.forEach(article => {
+                        const li = document.createElement('li');
+                        const link = document.createElement('a');
+                        link.href = article.url;
+                        link.textContent = article.title;
+                        link.target = '_blank';
+                        li.appendChild(link);
+                        articleList.appendChild(li);
+                    });
+                    
+                    section.appendChild(articleList);
+                    container.appendChild(section);
+                }
+            }
+        }
+        
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(refreshNews, 5 * 60 * 1000); // 5 minutes
+        }
+        
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+        
+        // Initial load
+        refreshNews();
+        startAutoRefresh();
+        
+        // Stop auto-refresh when page is hidden
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+    </script>
+</body>
+</html>
