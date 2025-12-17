@@ -94,21 +94,94 @@
             font-size: 12px;
             margin-left: 10px;
         }
+        
+        .bookmark-btn {
+            color: #ccc;
+            cursor: pointer;
+            font-size: 16px;
+            margin-left: 8px;
+            display: inline-block;
+            user-select: none;
+        }
+        
+        .bookmark-btn:hover {
+            color: #007acc;
+        }
+        
+        .bookmark-btn.bookmarked {
+            color: #ff6b35;
+        }
+        
+        .article-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .article-link {
+            flex: 1;
+        }
+        
+        .bookmarks-tab {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #007acc;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 3px;
+            text-decoration: none;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .bookmarks-tab:hover {
+            background: #005999;
+        }
+        
+        .bookmarks-section {
+            display: none;
+        }
+        
+        .bookmarks-section.active {
+            display: block;
+        }
+        
+        .news-section.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
-    <h1>News Aggregator</h1>
+    <button class="bookmarks-tab" onclick="toggleBookmarks()">📚 Bookmarks</button>
     
-    <div class="controls">
-        <button onclick="refreshNews()">Refresh</button>
-        <span class="auto-refresh">News auto-updates daily</span>
+    <div class="news-section" id="news-section">
+        <h1>News Aggregator</h1>
+        
+        <div class="controls">
+            <button onclick="refreshNews()">Refresh</button>
+            <span class="auto-refresh">News auto-updates daily</span>
+        </div>
+        
+        <div id="loading" class="loading">Loading news...</div>
+        <div id="news-container"></div>
     </div>
     
-    <div id="loading" class="loading">Loading news...</div>
-    <div id="news-container"></div>
+    <div class="bookmarks-section" id="bookmarks-section">
+        <h1>📚 Bookmarks</h1>
+        
+        <div class="controls">
+            <button onclick="toggleBookmarks()">← Back to News</button>
+            <button onclick="loadBookmarks()">Refresh Bookmarks</button>
+        </div>
+        
+        <div id="bookmarks-container"></div>
+    </div>
     
     <script>
         let autoRefreshInterval;
+        let currentBookmarks = new Set();
         
         async function refreshNews() {
             const container = document.getElementById('news-container');
@@ -130,6 +203,7 @@
                 const news = await response.json();
                 
                 loading.style.display = 'none';
+                await loadBookmarksList(); // Load bookmark state
                 displayNews(news);
             } catch (error) {
                 loading.style.display = 'none';
@@ -150,10 +224,67 @@
                 const news = await response.json();
                 
                 loading.style.display = 'none';
+                await loadBookmarksList(); // Load bookmark state
                 displayNews(news);
             } catch (error) {
                 loading.style.display = 'none';
                 container.innerHTML = '<div class="error">Error loading news. Please try again.</div>';
+            }
+        }
+        
+        async function toggleBookmark(title, url, source) {
+            try {
+                if (currentBookmarks.has(url)) {
+                    // Remove bookmark
+                    const response = await fetch('/api/bookmark', {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({url: url})
+                    });
+                    if (response.ok) {
+                        currentBookmarks.delete(url);
+                        updateBookmarkButtons();
+                    }
+                } else {
+                    // Add bookmark
+                    const response = await fetch('/api/bookmark', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({title: title, url: url, source: source})
+                    });
+                    if (response.ok) {
+                        currentBookmarks.add(url);
+                        updateBookmarkButtons();
+                    }
+                }
+            } catch (error) {
+                console.error('Error toggling bookmark:', error);
+            }
+        }
+        
+        function updateBookmarkButtons() {
+            document.querySelectorAll('.bookmark-btn').forEach(btn => {
+                const url = btn.dataset.url;
+                if (currentBookmarks.has(url)) {
+                    btn.classList.add('bookmarked');
+                    btn.textContent = '★';
+                } else {
+                    btn.classList.remove('bookmarked');
+                    btn.textContent = '☆';
+                }
+            });
+        }
+        
+        async function loadBookmarksList() {
+            try {
+                const response = await fetch('/api/bookmarks');
+                const bookmarks = await response.json();
+                
+                currentBookmarks.clear();
+                bookmarks.forEach(bookmark => currentBookmarks.add(bookmark.url));
+                updateBookmarkButtons();
+            } catch (error) {
+                console.error('Error loading bookmarks list:', error);
             }
         }
         
@@ -176,11 +307,30 @@
                     
                     articles.forEach(article => {
                         const li = document.createElement('li');
+                        const articleItem = document.createElement('div');
+                        articleItem.className = 'article-item';
+                        
                         const link = document.createElement('a');
+                        link.className = 'article-link';
                         link.href = article.url;
                         link.textContent = article.title;
                         link.target = '_blank';
-                        li.appendChild(link);
+                        
+                        const bookmarkBtn = document.createElement('span');
+                        bookmarkBtn.className = 'bookmark-btn';
+                        bookmarkBtn.dataset.url = article.url;
+                        bookmarkBtn.textContent = currentBookmarks.has(article.url) ? '★' : '☆';
+                        if (currentBookmarks.has(article.url)) {
+                            bookmarkBtn.classList.add('bookmarked');
+                        }
+                        bookmarkBtn.onclick = (e) => {
+                            e.preventDefault();
+                            toggleBookmark(article.title, article.url, source);
+                        };
+                        
+                        articleItem.appendChild(link);
+                        articleItem.appendChild(bookmarkBtn);
+                        li.appendChild(articleItem);
                         articleList.appendChild(li);
                     });
                     
@@ -201,8 +351,95 @@
             }
         }
         
+        async function toggleBookmarks() {
+            const newsSection = document.getElementById('news-section');
+            const bookmarksSection = document.getElementById('bookmarks-section');
+            
+            if (bookmarksSection.classList.contains('active')) {
+                // Switch back to news
+                bookmarksSection.classList.remove('active');
+                newsSection.classList.remove('hidden');
+            } else {
+                // Switch to bookmarks
+                newsSection.classList.add('hidden');
+                bookmarksSection.classList.add('active');
+                await loadBookmarks();
+            }
+        }
+        
+        async function loadBookmarks() {
+            const container = document.getElementById('bookmarks-container');
+            
+            try {
+                container.innerHTML = '<div class="loading">Loading bookmarks...</div>';
+                
+                const response = await fetch('/api/bookmarks');
+                const bookmarks = await response.json();
+                
+                container.innerHTML = '';
+                
+                if (bookmarks.length === 0) {
+                    container.innerHTML = '<div class="source-section"><p>No bookmarks yet. Start bookmarking articles by clicking the ☆ next to any article!</p></div>';
+                    return;
+                }
+                
+                const section = document.createElement('div');
+                section.className = 'source-section';
+                
+                const title = document.createElement('div');
+                title.className = 'source-title';
+                title.textContent = `Your Bookmarks (${bookmarks.length})`;
+                section.appendChild(title);
+                
+                const articleList = document.createElement('ul');
+                articleList.className = 'articles';
+                
+                bookmarks.forEach(bookmark => {
+                    const li = document.createElement('li');
+                    const articleItem = document.createElement('div');
+                    articleItem.className = 'article-item';
+                    
+                    const link = document.createElement('a');
+                    link.className = 'article-link';
+                    link.href = bookmark.url;
+                    link.textContent = bookmark.title;
+                    link.target = '_blank';
+                    
+                    const sourceSpan = document.createElement('small');
+                    sourceSpan.textContent = ` (${bookmark.source})`;
+                    sourceSpan.style.color = '#888';
+                    
+                    const bookmarkBtn = document.createElement('span');
+                    bookmarkBtn.className = 'bookmark-btn bookmarked';
+                    bookmarkBtn.dataset.url = bookmark.url;
+                    bookmarkBtn.textContent = '★';
+                    bookmarkBtn.onclick = (e) => {
+                        e.preventDefault();
+                        toggleBookmark(bookmark.title, bookmark.url, bookmark.source);
+                        setTimeout(loadBookmarks, 100); // Refresh bookmarks view
+                    };
+                    
+                    const linkContainer = document.createElement('div');
+                    linkContainer.appendChild(link);
+                    linkContainer.appendChild(sourceSpan);
+                    
+                    articleItem.appendChild(linkContainer);
+                    articleItem.appendChild(bookmarkBtn);
+                    li.appendChild(articleItem);
+                    articleList.appendChild(li);
+                });
+                
+                section.appendChild(articleList);
+                container.appendChild(section);
+                
+            } catch (error) {
+                container.innerHTML = '<div class="error">Error loading bookmarks. Please try again.</div>';
+            }
+        }
+        
         // Initial load (from cache)
         loadNews();
+        loadBookmarksList();
         startAutoRefresh();
         
         // Stop auto-refresh when page is hidden

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import asyncio
 import aiohttp
 import requests
@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import json
 import threading
 import time
+import os
 
 app = Flask(__name__)
 
@@ -34,6 +35,10 @@ class NewsAggregator:
         
         # Start background refresh thread
         self.start_background_refresh()
+        
+        # Bookmarks storage
+        self.bookmarks_file = 'bookmarks.json'
+        self.bookmarks = self.load_bookmarks()
         
     async def get_hackernews(self):
         """Get top stories from Hacker News API"""
@@ -434,6 +439,52 @@ class NewsAggregator:
         except Exception as e:
             print(f"Error in manual refresh: {e}")
             return False
+    
+    def load_bookmarks(self):
+        """Load bookmarks from file"""
+        try:
+            if os.path.exists(self.bookmarks_file):
+                with open(self.bookmarks_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Error loading bookmarks: {e}")
+        return []
+    
+    def save_bookmarks(self):
+        """Save bookmarks to file"""
+        try:
+            with open(self.bookmarks_file, 'w', encoding='utf-8') as f:
+                json.dump(self.bookmarks, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving bookmarks: {e}")
+            return False
+    
+    def add_bookmark(self, title, url, source):
+        """Add a bookmark"""
+        bookmark = {
+            'title': title,
+            'url': url,
+            'source': source,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Check if bookmark already exists
+        for existing in self.bookmarks:
+            if existing['url'] == url:
+                return False  # Already bookmarked
+        
+        self.bookmarks.insert(0, bookmark)  # Add to beginning
+        return self.save_bookmarks()
+    
+    def remove_bookmark(self, url):
+        """Remove a bookmark"""
+        self.bookmarks = [b for b in self.bookmarks if b['url'] != url]
+        return self.save_bookmarks()
+    
+    def get_bookmarks(self):
+        """Get all bookmarks"""
+        return self.bookmarks
 
 aggregator = NewsAggregator()
 
@@ -457,6 +508,38 @@ def refresh_news():
         })
     else:
         return jsonify({'status': 'error', 'message': 'Failed to refresh news'}), 500
+
+@app.route('/api/bookmark', methods=['POST'])
+def add_bookmark():
+    data = request.json
+    title = data.get('title')
+    url = data.get('url')
+    source = data.get('source', 'Unknown')
+    
+    if not title or not url:
+        return jsonify({'status': 'error', 'message': 'Title and URL required'}), 400
+    
+    success = aggregator.add_bookmark(title, url, source)
+    if success:
+        return jsonify({'status': 'success', 'message': 'Bookmark added'})
+    else:
+        return jsonify({'status': 'error', 'message': 'Already bookmarked'}), 400
+
+@app.route('/api/bookmark', methods=['DELETE'])
+def remove_bookmark():
+    data = request.json
+    url = data.get('url')
+    
+    if not url:
+        return jsonify({'status': 'error', 'message': 'URL required'}), 400
+    
+    success = aggregator.remove_bookmark(url)
+    return jsonify({'status': 'success', 'message': 'Bookmark removed'})
+
+@app.route('/api/bookmarks')
+def get_bookmarks():
+    bookmarks = aggregator.get_bookmarks()
+    return jsonify(bookmarks)
 
 if __name__ == '__main__':
     import os
