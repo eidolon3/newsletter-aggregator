@@ -6,7 +6,7 @@ A minimal web-based news aggregator that pulls content from:
 - EA Forum (top posts by karma)
 - Marginal Revolution (latest posts)
 - Gwern.net (latest content)
-- Your Substack subscriptions (@thelightcone)
+- Substack subscriptions
 
 ## Setup
 
